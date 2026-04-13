@@ -1,0 +1,48 @@
+#开发环境配置 - 使用 H2 内存数据库，无需外部数据库
+
+server:
+  # 服务端口
+  port: 5000
+
+
+spring:
+  # 数据源配置 - 使用 H2 内存数据库
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:lin-cms;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=MySQL
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-h2.sql
+
+
+# 开启权限拦截
+auth:
+  enabled: true
+
+# 开启登录要求验证码
+login-captcha:
+  enabled: false
+  secret: "m49CPM5ak@MDXTzbbT_ZEyMM3KBsBn!h"
+
+# 开启http请求日志记录
+request-log:
+  enabled: true
+
+
+logging:
+  level:
+    # web信息日志记录
+    web: debug
+    # SQL日志记录
+    io.github.talelin.latticy.mapper: debug
+
+
+
+

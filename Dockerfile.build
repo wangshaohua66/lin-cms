@@ -1,0 +1,100 @@
+# 单容器构建方案 - 同时包含前后端
+# 适用于简单的部署场景
+
+# 构建阶段 1: 构建后端
+FROM eclipse-temurin:21-jdk-alpine AS backend-builder
+
+WORKDIR /app/server
+
+# 安装 Maven
+RUN apk add --no-cache maven curl
+
+# 复制 Maven 配置（使用阿里云镜像加速下载）
+COPY maven-settings.xml /root/.m2/settings.xml
+
+# 复制后端代码
+COPY server/pom.xml .
+COPY server/src ./src
+
+# 构建后端（使用阿里云镜像）
+RUN mvn clean package -DskipTests -B -s /root/.m2/settings.xml
+
+# 构建阶段 2: 构建前端
+FROM node:18-alpine AS frontend-builder
+
+WORKDIR /app/web
+
+# 复制前端代码
+COPY web/package*.json ./
+COPY web/yarn.lock* ./
+
+# 安装依赖
+RUN if [ -f yarn.lock ]; then \
+        yarn install --frozen-lockfile; \
+    else \
+        npm ci; \
+    fi
+
+# 复制源代码并构建
+COPY web/ .
+RUN if [ -f yarn.lock ]; then \
+        yarn build; \
+    else \
+        npm run build; \
+    fi
+
+# 运行阶段
+FROM eclipse-temurin:21-jre-alpine
+
+WORKDIR /app
+
+# 安装必要的工具
+RUN apk add --no-cache nginx curl
+
+# 创建非 root 用户
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+# 复制后端 JAR
+COPY --from=backend-builder /app/server/target/*.jar /app/server.jar
+
+# 复制前端构建产物
+COPY --from=frontend-builder /app/web/dist /usr/share/nginx/html
+
+# Nginx 配置
+RUN echo 'server { \
+    listen 80; \
+    server_name localhost; \
+    root /usr/share/nginx/html; \
+    index index.html; \
+    \
+    location / { \
+        try_files $uri $uri/ /index.html; \
+    } \
+    \
+    location /cms { \
+        proxy_pass http://127.0.0.1:5000; \
+        proxy_set_header Host $host; \
+        proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $scheme; \
+    } \
+}' > /etc/nginx/http.d/default.conf
+
+# 启动脚本
+RUN echo '#!/bin/sh' > /app/start.sh && \
+    echo 'nginx' >> /app/start.sh && \
+    echo 'java -Djava.security.egd=file:/dev/./urandom -jar /app/server.jar' >> /app/start.sh && \
+    chmod +x /app/start.sh
+
+# 更改文件所有者
+RUN chown -R appuser:appgroup /app /usr/share/nginx/html /var/lib/nginx /var/log/nginx /run/nginx
+
+# 暴露端口
+EXPOSE 80 5000
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:5000/ || exit 1
+
+# 启动
+CMD ["/app/start.sh"]

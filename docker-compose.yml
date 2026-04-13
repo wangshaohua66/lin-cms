@@ -1,0 +1,30 @@
+# Docker Compose 配置 - 单容器方案
+# 前后端合一，简化部署
+
+version: '3.8'
+
+services:
+  lin-cms:
+    build:
+      context: .
+      dockerfile: Dockerfile.build
+    container_name: lin-cms
+    restart: unless-stopped
+    ports:
+      - "80:80"      # 前端访问端口
+      - "5000:5000"  # 后端 API 端口
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SERVER_PORT=5000
+    networks:
+      - lin-cms-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  lin-cms-network:
+    driver: bridge
